@@ -409,8 +409,8 @@ int get_free_block(){
 		return bloco;
 }
 
-int get_block(){
-  int cur_dir = (dir_entry*) BLOCK(current_dir);
+/*int get_block(){
+  dir_entry *cur_dir = (dir_entry*) BLOCK(current_dir);
   dir_entry *dir;
   int freeBlock;
   while(fat[cur_dir] != -1){
@@ -424,7 +424,8 @@ int get_block(){
     return freeBlock;
   }
   return cur_dir;
-}
+  
+}*/
 
 int existName(char *nome_dir){
   dir_entry *dir = (dir_entry*) BLOCK(current_dir);
