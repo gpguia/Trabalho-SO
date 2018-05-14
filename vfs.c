@@ -410,10 +410,20 @@ int get_free_block(){
 }
 
 int get_block(){
-  dir_entry *dir = (dir_entry*) BLOCK(current_dir);
-  if(dir[0].size == sb->fat_type){
-
+  int cur_dir = (dir_entry*) BLOCK(current_dir);
+  dir_entry *dir;
+  int freeBlock;
+  while(fat[cur_dir] != -1){
+    cur_dir = fat[cur_dir];
   }
+  dir = (dir_entry*) cur_dir;
+  if(dir[0].size == sb->fat_type){
+    freeBlock = get_free_block();
+    fat[cur_dir] = freeBlock;
+    fat[freeBlock] = -1;
+    return freeBlock;
+  }
+  return cur_dir;
 }
 
 int existName(char *nome_dir){
@@ -459,23 +469,50 @@ void vfs_cd(char *nome_dir) {
   dir_entry *dir = (dir_entry*) BLOCK(current_dir);
   int i;
   int numEntradas = dir[0].size;
-  printf("numEntradas: %d",numEntradas);
+
   for(i=0;i<numEntradas;i++){
-    dir = (dir_entry*) BLOCK(current_dir);
-    printf("dirname: %s \t nome_dir: %s \n",dir[i].name,nome_dir);
     if(strcmp(dir[i].name,nome_dir) == 0){
-      
-      break;
-    }else{
-      current_dir++;
+      current_dir = dir[i].first_block;
+      return;
     }
+    if(dir[i].type != TYPE_DIR){
+      printf("ERROR: this is not a folder.\n");
+      return;
+    }
+
   }
+  printf("ERROR: this folder does not exist.\n");
   return;
 }
 
 
 // pwd - escreve o caminho absoluto do diretório actual
 void vfs_pwd(void) {
+  int n_entry_pai,i,blockAtual;
+  char path[255],tmp[255];
+  memset(path,0,sizeof(path));
+  memset(tmp,0,sizeof(tmp));
+  dir_entry *dir = (dir_entry*) BLOCK(current_dir);
+  blockAtual = dir[0].first_block;
+  while(dir[0].first_block != 0){
+    dir_entry *dir_pai = (dir_entry*) BLOCK(dir[1].first_block);
+    n_entry_pai = dir_pai[0].size;
+    for(i = 0; i< n_entry_pai ; i++){
+      if(dir_pai[i].first_block == blockAtual){
+        strcpy(tmp,"/");
+        strcat(tmp,dir_pai[i].name);
+        strcat(tmp,path);
+        strcpy(path,tmp);
+        break;
+      }
+    }
+    dir = (dir_entry*) BLOCK(dir[1].first_block);
+    blockAtual = dir[0].first_block;
+  }
+  if(strcmp(path,"") == 0){
+    strcpy(path,"/");
+  }
+  printf("%s\n",path);
   return;
 }
 
