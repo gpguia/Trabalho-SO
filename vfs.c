@@ -439,6 +439,23 @@ int existName(char *nome_dir){
   return 0;
 }
 
+void free_this_block(int nBlock){
+  int closestFreeBlock;
+  sb->n_free_blocks++;
+  if(sb->free_block > nBlock){
+    fat[nBlock] = sb->free_block;
+    sb->free_block = nBlock;
+  }else{
+    closestFreeBlock = sb->free_block;
+    while(fat[closestFreeBlock] < nBlock){
+      closestFreeBlock = fat[closestFreeBlock];
+      
+      fat[nBlock] = fat[closestFreeBlock];
+      fat[closestFreeBlock] = nBlock;
+    }
+  }
+}
+
 // mkdir dir - cria um subdiretório com nome dir no diretório actual
 void vfs_mkdir(char *nome_dir) {
 	if(sb->n_free_blocks == 0){ //Verifica se há espaço
@@ -520,12 +537,50 @@ void vfs_pwd(void) {
 
 // rmdir dir - remove o subdiretório dir (se vazio) do diretório actual
 void vfs_rmdir(char *nome_dir) {
+  int i;
+  dir_entry *dir = (dir_entry*) BLOCK(current_dir);
+
+  int n_entry = dir[0].size;
+  for(i=2;i<n_entry;i++){
+    if(strcmp(dir[i].name,nome_dir) == 0){
+      dir_entry *dir_del = (dir_entry*) BLOCK(dir[i].first_block);
+      if(dir_del[0].size == 2){
+        free_this_block(dir[i].first_block);
+        dir[i]=dir[n_entry-1];
+        dir[0].size--;
+      }else{
+        printf("ERROR: This folder is not empty.\n");
+      }
+      return;
+    }
+  }
+  printf("ERROR: folder does not exist.\n");
   return;
 }
 
 
 // get fich1 fich2 - copia um ficheiro normal UNIX fich1 para um ficheiro no nosso sistema fich2
 void vfs_get(char *nome_orig, char *nome_dest) {
+  int fp = open(nome_orig,O_RDONLY);
+
+  if(fp < 0){
+    printf("ERROR: could not open the file.\n");
+    return;
+  }
+  .
+  int fb = get_free_block();
+  int rd = read(fp,BLOCK(b),sb->block_size);
+  init_dir_entry(&dir[n_entry], TYPE_FILE, nome_dest, sb->block_size,fb); //inicia o block ocmo ficheiro
+  //Looping para ler todo o ficheiro ate o fim
+  
+  if(rd < 0){
+    printf("ERROR: could not read the file.\n");
+    return;
+  }
+
+  //Criar ficheiro tipo a funcao mkdir
+  
+
   return;
 }
 
