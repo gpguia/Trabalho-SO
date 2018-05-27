@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////
 //                                                                    //
-// dsdcccsx           Trabalho II: Sistema de Gestão de Ficheiros             //
+//            Trabalho II: Sistema de Gestão de Ficheiros             //
 //                                                                    //
 // Compilação: gcc vfs.c -Wall -lreadline -o vfs                      //
 // Utilização: ./vfs [-b[128|256|512|1024]] [-f[7|8|9|10]] FILESYSTEM //
@@ -16,6 +16,7 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/types.h>
+#include <math.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 
@@ -132,20 +133,20 @@ void parse_argv(int argc, char *argv[]) {
   for (i = 1; i < argc - 1; i++) {
     if (argv[i][0] == '-') {
       if (argv[i][1] == 'b') {
-	block_size = atoi(&argv[i][2]);
-	if (block_size != 128 && block_size != 256 && block_size != 512 && block_size != 1024) {
-	  printf("vfs: invalid block size (%d)\n", block_size);
-	  show_usage_and_exit();
-	}
+  block_size = atoi(&argv[i][2]);
+  if (block_size != 128 && block_size != 256 && block_size != 512 && block_size != 1024) {
+    printf("vfs: invalid block size (%d)\n", block_size);
+    show_usage_and_exit();
+  }
       } else if (argv[i][1] == 'f') {
-	fat_type = atoi(&argv[i][2]);
-	if (fat_type != 7 && fat_type != 8 && fat_type != 9 && fat_type != 10) {
-	  printf("vfs: invalid fat type (%d)\n", fat_type);
-	  show_usage_and_exit();
-	}
+  fat_type = atoi(&argv[i][2]);
+  if (fat_type != 7 && fat_type != 8 && fat_type != 9 && fat_type != 10) {
+    printf("vfs: invalid fat type (%d)\n", fat_type);
+    show_usage_and_exit();
+  }
       } else {
-	printf("vfs: invalid argument (%s)\n", argv[i]);
-	show_usage_and_exit();
+  printf("vfs: invalid argument (%s)\n", argv[i]);
+  show_usage_and_exit();
       }
     } else {
       printf("vfs: invalid argument (%s)\n", argv[i]);
@@ -357,230 +358,330 @@ void exec_com(COMMAND com) {
   return;
 }
 
+////////////////////////////////
+//EXTRAS
+int get_free_block(){
+  if(sb->n_free_blocks == 0) return -1;
+  
+  int block = sb->free_block;
+  sb->free_block = fat[block];
+  fat[block] = -1;
+  
+  sb->n_free_blocks --;
+  return block;
+}
 
-// ls - lista o conteúdo do diretório actual
-void vfs_ls(void) {
-	dir_entry *dir = (dir_entry*) BLOCK(current_dir);
-	int numEntradas = dir[0].size;
-	int i;
-	
-	for(i=0;i<numEntradas;i++){
-		printf("%s \t %d-",dir[i].name,dir[i].day);
-		if(dir[i].month == 1){
-			printf("Jan-%d",dir[i].year+1900);
-		}else if(dir[i].month == 2){
-			printf("Fev-%d",dir[i].year+1900);
-		}else if(dir[i].month == 3){
-			printf("Mar-%d",dir[i].year+1900);
-		}else if(dir[i].month == 4){
-			printf("Abr-%d",dir[i].year+1900);
-		}else if(dir[i].month == 5){
-			printf("Mai-%d",dir[i].year+1900);
-		}else if(dir[i].month == 6){
-			printf("Jun-%d",dir[i].year+1900);
-		}else if(dir[i].month == 7){
-			printf("Jul-%d",dir[i].year+1900);
-		}else if(dir[i].month == 8){
-			printf("Ago-%d",dir[i].year+1900);
-		}else if(dir[i].month == 9){
-			printf("Set-%d",dir[i].year+1900);
-		}else if(dir[i].month == 10){
-			printf("Out-%d",dir[i].year+1900);
-		}else if(dir[i].month == 11){
-			printf("Nov-%d",dir[i].year+1900);
-		}else if(dir[i].month == 12){
-			printf("Dec-%d",dir[i].year+1900);
-		}
-		if(dir[i].type == 'D'){
-			printf(" DIR\n");
-		}else{
-			printf(" %d\n",dir[i].size);	
-		}
-	}
+void put_free_block(int block){
+  fat[block] = sb->free_block;
+  sb->free_block = block;
+  sb->n_free_blocks ++;
   return;
 }
 
-//retorna um bloco livre:
-int get_free_block(){
-		int bloco = sb->free_block;
-		sb->free_block = fat[bloco];
-		fat[bloco] = -1;
-		sb->n_free_blocks--;
-		return bloco;
-}
+////////////////////////////////
 
-/*int get_block(){
-  dir_entry *cur_dir = (dir_entry*) BLOCK(current_dir);
-  dir_entry *dir;
-  int freeBlock;
-  while(fat[cur_dir] != -1){
-    cur_dir = fat[cur_dir];
-  }
-  dir = (dir_entry*) cur_dir;
-  if(dir[0].size == sb->fat_type){
-    freeBlock = get_free_block();
-    fat[cur_dir] = freeBlock;
-    fat[freeBlock] = -1;
-    return freeBlock;
-  }
-  return cur_dir;
+
+// ls - lista o conteúdo do diretório actual
+void vfs_ls(void) {
+  int my_dir = current_dir;
+  dir_entry *dir = (dir_entry *) BLOCK(my_dir);
+  int n_entry = dir[0].size;
   
-}*/
-
-int existName(char *nome_dir){
-  dir_entry *dir = (dir_entry*) BLOCK(current_dir);
-  int numEntradas = dir[0].size;
-  int i;
-  for(i=0;i<numEntradas;i++){
-    if(strcmp(nome_dir,dir[i].name) == 0){
-      return 1;
+  int k;
+  for(int i=0;i<n_entry;i++){
+    k = i%DIR_ENTRIES_PER_BLOCK;
+    if(k == 0 && i!=0){
+      my_dir = fat[my_dir];
+      dir = (dir_entry *) BLOCK(my_dir);
     }
+    printf("%-25s %02d-%02d-%04d",dir[k].name,dir[k].day,dir[k].month,dir[k].year+1900);
+    if(dir[k].type == TYPE_DIR)
+      printf(" DIR\n");
+    else 
+      printf(" %04d\n",dir[k].size);    
   }
-  return 0;
-}
-
-void free_this_block(int nBlock){
-  int closestFreeBlock;
-  sb->n_free_blocks++;
-  if(sb->free_block > nBlock){
-    fat[nBlock] = sb->free_block;
-    sb->free_block = nBlock;
-  }else{
-    closestFreeBlock = sb->free_block;
-    while(fat[closestFreeBlock] < nBlock){
-      closestFreeBlock = fat[closestFreeBlock];
-      
-      fat[nBlock] = fat[closestFreeBlock];
-      fat[closestFreeBlock] = nBlock;
-    }
-  }
+  
+  return;
 }
 
 // mkdir dir - cria um subdiretório com nome dir no diretório actual
 void vfs_mkdir(char *nome_dir) {
-	if(sb->n_free_blocks == 0){ //Verifica se há espaço
-		printf("ERROR there is no empty blocks.\n");
-		return;
-	}
-	if(existName(nome_dir) == 1){//já existe o dir
-		printf("ERRRO dir already exists.\n");
+  dir_entry *dir_o = (dir_entry *) BLOCK(current_dir), *dir = (dir_entry *) BLOCK(current_dir);
+  int n_entry = dir_o[0].size;
+  
+  if(strlen(nome_dir) > 20){
+    printf("ERROR(mkdir: cannot create directory '%s' - name too long)\n",nome_dir);
     return;
-	}
-	if(strlen(nome_dir)+1 > MAX_NAME_LENGHT){ //Tamanho do nome maior do que 20
-		printf("ERROR name too big.\n");
-		return;
-	}
-	int block_livre = get_free_block(); //Verifica qual é o proximo bloco livre
-	dir_entry *dir = (dir_entry*) BLOCK(current_dir); //Aponta para o bloco
-	int numEntradas = dir[0].size; //Pega o numero de blocos que já tem
-	
-	
-	init_dir_entry(&dir[numEntradas],TYPE_DIR,nome_dir,0, block_livre); //Cria a entrada do dir
-	init_dir_block(block_livre,current_dir); //Inicia o . e o ..
-	dir[0].size++; //aumenta o size 
+  }
+  
+  int i,k;
+  int c_dir = current_dir;
+  int n_blocks = 1;
+  
+  for(i = 0;i<n_entry;i++){
+    k = i%DIR_ENTRIES_PER_BLOCK;
+    if(k == 0 && i!=0){
+      c_dir = fat[c_dir];
+      dir = (dir_entry *) BLOCK(c_dir);
+      n_blocks ++;
+    }
+    if(strcmp(nome_dir,dir[k].name) == 0) break;
+  }
+  
+  if(i != n_entry){
+    printf("ERROR(mkdir: cannot create directory '%s' - entry exists)\n",nome_dir);
+    return;
+  }
+  
+  int block = get_free_block();
+  if(block == -1){
+    printf("ERROR(mkdir: cannot create directory '%s' - disk is full)\n",nome_dir);
+    return;
+  }
+  
+  
+  int my_dir = current_dir;
+  while(fat[my_dir] != -1){
+    my_dir = fat[my_dir];
+    n_blocks++;
+  }
+  
+  if(n_entry%DIR_ENTRIES_PER_BLOCK == 0){
+    int block2 = get_free_block();
+    if(block2 == -1){
+      printf("ERROR(mkdir: cannot create directory '%s' - disk is full)\n",nome_dir);
+      put_free_block(block);
+      return;
+    }
+    fat[my_dir] = block2;
+    my_dir = block2;
+  }
+  
+  dir_entry *f_dir = (dir_entry *) BLOCK(my_dir);
+   
+  init_dir_block(block,current_dir);
+  init_dir_entry(&f_dir[n_entry%DIR_ENTRIES_PER_BLOCK],TYPE_DIR,nome_dir,0,block);
+  
+  dir = (dir_entry *) BLOCK(current_dir);
+  dir[0].size ++;
+  
   return;
 }
 
 
 // cd dir - move o diretório actual para dir
 void vfs_cd(char *nome_dir) {
-  dir_entry *dir = (dir_entry*) BLOCK(current_dir);
-  int i;
-  int numEntradas = dir[0].size;
-
-  for(i=0;i<numEntradas;i++){
-    if(strcmp(dir[i].name,nome_dir) == 0){
-      current_dir = dir[i].first_block;
-      return;
+  dir_entry *dir = (dir_entry *) BLOCK(current_dir);
+  int n_entry = dir[0].size;
+  
+  int i,k;
+  int mdir = current_dir;
+  for(i =0;i<n_entry;i++){
+    k = i%DIR_ENTRIES_PER_BLOCK;
+    if(k == 0 && i != 0){
+      mdir = fat[mdir];
+      dir = (dir_entry *) BLOCK(mdir);
     }
-    if(dir[i].type != TYPE_DIR){
-      printf("ERROR: this is not a folder.\n");
-      return;
-    }
-
+    if(strcmp(dir[k].name,nome_dir) == 0) break;
   }
-  printf("ERROR: this folder does not exist.\n");
+  
+  if(i == n_entry){
+    printf("ERROR(cd: %s not in directory)\n",nome_dir);
+    return;
+  }
+  
+  if(dir[k].type != TYPE_DIR){
+    printf("ERROR(cd: %s not a directory)\n",nome_dir);
+    return;
+  }
+  
+  current_dir = dir[k].first_block;
+  
   return;
 }
 
+void pwd_aux(int f_b){
+  dir_entry *dir = (dir_entry *) BLOCK(f_b);
+  int n_entry = dir[0].size;
+  
+  if(f_b == dir[1].first_block){
+    printf("/");
+  }
+  else {
+    pwd_aux(dir[1].first_block);
+    
+    int i,k;
+    int mdir = dir[1].first_block;
+    dir = (dir_entry *) BLOCK(mdir);
+    n_entry = dir[0].size;
+    for(i = 0;i<n_entry;i++){
+      k = i%DIR_ENTRIES_PER_BLOCK;
+      if(k==0 && i!=0){
+        mdir = fat[mdir];
+        dir = (dir_entry *) BLOCK(mdir);
+      }
+      if(dir[k].first_block == f_b)
+        break;
+    }
+    
+    printf("%s",dir[k].name);
+  }
+  
+  return;
+}
 
 // pwd - escreve o caminho absoluto do diretório actual
 void vfs_pwd(void) {
-  int n_entry_pai,i,blockAtual;
-  char path[255],tmp[255];
-  memset(path,0,sizeof(path));
-  memset(tmp,0,sizeof(tmp));
-  dir_entry *dir = (dir_entry*) BLOCK(current_dir);
-  blockAtual = dir[0].first_block;
-  while(dir[0].first_block != 0){
-    dir_entry *dir_pai = (dir_entry*) BLOCK(dir[1].first_block);
-    n_entry_pai = dir_pai[0].size;
-    for(i = 0; i< n_entry_pai ; i++){
-      if(dir_pai[i].first_block == blockAtual){
-        strcpy(tmp,"/");
-        strcat(tmp,dir_pai[i].name);
-        strcat(tmp,path);
-        strcpy(path,tmp);
-        break;
-      }
-    }
-    dir = (dir_entry*) BLOCK(dir[1].first_block);
-    blockAtual = dir[0].first_block;
-  }
-  if(strcmp(path,"") == 0){
-    strcpy(path,"/");
-  }
-  printf("%s\n",path);
+  pwd_aux(current_dir);
+  printf("\n");
   return;
 }
 
 
 // rmdir dir - remove o subdiretório dir (se vazio) do diretório actual
 void vfs_rmdir(char *nome_dir) {
-  int i;
-  dir_entry *dir = (dir_entry*) BLOCK(current_dir);
-
+  dir_entry *dir = (dir_entry *)  BLOCK(current_dir);
   int n_entry = dir[0].size;
-  for(i=2;i<n_entry;i++){
-    if(strcmp(dir[i].name,nome_dir) == 0){
-      dir_entry *dir_del = (dir_entry*) BLOCK(dir[i].first_block);
-      if(dir_del[0].size == 2){
-        free_this_block(dir[i].first_block);
-        dir[i]=dir[n_entry-1];
-        dir[0].size--;
-      }else{
-        printf("ERROR: This folder is not empty.\n");
-      }
-      return;
+  
+  int i,k;
+  int mdir = current_dir;
+  int prev = mdir;
+  
+  for(i = 0;i<n_entry;i++){
+    k = i%DIR_ENTRIES_PER_BLOCK;
+    if(k == 0 && i != 0){
+      prev = mdir;
+      mdir = fat[mdir];
+      dir = (dir_entry *) BLOCK(mdir);
     }
+    if(strcmp(dir[k].name,nome_dir) == 0) break;
   }
-  printf("ERROR: folder does not exist.\n");
+  
+  if(i == n_entry){
+    printf("ERROR(rmdir: %s not in directory)\n",nome_dir);
+    return;
+  }
+  
+  if(dir[k].type != TYPE_DIR){
+    printf("ERROR(rmdir: %s not a directory)\n",nome_dir);
+    return;
+  }
+  
+  if(i<2){
+    printf("ERROR(rmdir: %s is a invalid directory ('.' ou '..'))\n",nome_dir);
+    return;
+  }
+  
+  dir_entry *d_tmp = (dir_entry *) BLOCK(dir[k].first_block);
+  if(d_tmp[0].size > 2){
+    printf("ERROR(rmdir: %s is not empty)\n",nome_dir);
+    return;
+  }
+  
+  put_free_block(dir[k].first_block);
+  
+  d_tmp = (dir_entry *) BLOCK(mdir);
+  
+  if(i != n_entry - 1){
+    int i2,k2;
+    for(i2 = i;i2<n_entry;i2++){
+      k2 = i2%DIR_ENTRIES_PER_BLOCK;
+      if(k2 == 0 && i2!=0){
+        prev = mdir;
+        mdir = fat[mdir];
+        d_tmp = (dir_entry *) BLOCK(mdir);
+      }
+    }
+    
+    dir[k] = d_tmp[k2];
+  }
+  
+  if((n_entry - 1)%DIR_ENTRIES_PER_BLOCK == 0){
+    put_free_block(mdir);
+    fat[prev] = -1;
+  }
+  
+  dir = (dir_entry *) BLOCK(current_dir);
+  dir[0].size --; 
+  
   return;
 }
 
 
 // get fich1 fich2 - copia um ficheiro normal UNIX fich1 para um ficheiro no nosso sistema fich2
 void vfs_get(char *nome_orig, char *nome_dest) {
-  int fp = open(nome_orig,O_RDONLY);
-
-  if(fp < 0){
-    printf("ERROR: could not open the file.\n");
+  dir_entry *dir = (dir_entry *) BLOCK(current_dir);
+  dir_entry *dir_o = (dir_entry *) BLOCK(current_dir);
+  int n_entry = dir[0].size;
+  int mdir = current_dir;
+  
+  if(strlen(nome_dest) > 20){
+    printf("ERROR(get: name too long)\n");
     return;
   }
-  .
-  int fb = get_free_block();
-  int rd = read(fp,BLOCK(b),sb->block_size);
-  init_dir_entry(&dir[n_entry], TYPE_FILE, nome_dest, sb->block_size,fb); //inicia o block ocmo ficheiro
-  //Looping para ler todo o ficheiro ate o fim
   
-  if(rd < 0){
-    printf("ERROR: could not read the file.\n");
+  int i,k;
+  for(i = 0;i<n_entry;i++){
+    k = i%DIR_ENTRIES_PER_BLOCK;
+    if(k == 0 && i != 0){
+      mdir = fat[mdir];
+      dir = (dir_entry *) BLOCK(mdir);
+    }
+    if(strcmp(nome_dest,dir[k].name) == 0) break;
+  }
+  
+  if(i != n_entry){
+    printf("ERROR(get: name already exists)\n");
     return;
   }
-
-  //Criar ficheiro tipo a funcao mkdir
   
-
+  struct stat my_stat;
+  if(lstat(nome_orig, &my_stat) == -1){
+    printf("ERROR(get: couldnt found file %s)\n",nome_orig);
+    return;
+  }
+  
+  int f_size = my_stat.st_size;
+  int req_size = (my_stat.st_size + sb->block_size - 1)/sb->block_size;
+  int require_blocks =  (k == DIR_ENTRIES_PER_BLOCK-1) + req_size;
+  
+  if(require_blocks > sb->n_free_blocks){
+    printf("ERROR(get: disk is full)\n");
+    return;
+  }
+  
+  dir_o[0].size ++;
+  
+  int temp;
+  if(k == DIR_ENTRIES_PER_BLOCK-1){
+    temp = get_free_block();
+    fat[mdir] = temp;
+    mdir = temp;
+  }
+  
+  k = n_entry % DIR_ENTRIES_PER_BLOCK;
+  dir = (dir_entry *) BLOCK(mdir);
+  
+  int f_b = get_free_block();
+  int prev = f_b;
+  
+  init_dir_entry(&dir[k],TYPE_FILE,nome_dest,f_size,f_b);
+  
+  int f = open(nome_orig, O_RDONLY);
+  char msg[5000];
+  
+  int n;
+  n = read(f,msg,sb->block_size);
+  while (n>0){
+    strcpy(BLOCK(f_b), msg);
+    n = read(f,msg,sb->block_size);
+    if(n>0){
+      prev = f_b;
+      f_b = get_free_block();
+      fat[prev] = f_b;
+    }
+  }
+  
   return;
 }
 
@@ -593,6 +694,41 @@ void vfs_put(char *nome_orig, char *nome_dest) {
 
 // cat fich - escreve para o ecrã o conteúdo do ficheiro fich
 void vfs_cat(char *nome_fich) {
+  dir_entry *dir =(dir_entry *) BLOCK(current_dir);
+  int n_entry = dir[0].size;
+  int mdir = current_dir;
+  
+  int k,i;  
+  for(i = 0;i<n_entry;i++){
+    k = i%DIR_ENTRIES_PER_BLOCK;
+    if(k==0 && i!=0){
+      mdir = fat[mdir];
+      dir = (dir_entry*) BLOCK(mdir);
+    }
+    if(strcmp(dir[k].name,nome_fich) == 0) break;
+  }
+  
+  if(i == n_entry){
+    printf("ERROR(cat: no file with name '%s')\n",nome_fich);
+    return;
+  }
+  
+  if(dir[k].type != TYPE_FILE){
+    printf("ERROR(cat: '%s' is not a file)\n",nome_fich);
+    return;
+  }
+  
+  int block = dir[k].first_block;
+  int size = dir[k].size;
+  while(size>0){
+    if(size < sb->block_size)
+      write(STDOUT_FILENO, BLOCK(block), size);
+    else
+      write(STDOUT_FILENO, BLOCK(block), sb->block_size);
+    size -= sb->block_size;
+    block = fat[block]; 
+  }
+  
   return;
 }
 
